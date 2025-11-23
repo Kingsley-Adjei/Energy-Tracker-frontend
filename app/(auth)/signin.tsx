@@ -1,10 +1,15 @@
+
 import { borderRadius, spacing } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import Constants from "expo-constants";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,10 +20,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { signIn, signInWithOAuth } from '../../api';
+const { googleAndroidId, googleWebId } = Constants.expoConfig.extra;
 
-// TODO: Install and configure Google Sign-In
-// expo install @react-native-google-signin/google-signin
-// import { GoogleSignin } from '@react-native-google-signin/google-signin';
+WebBrowser.maybeCompleteAuthSession();
+
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -28,61 +34,132 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // Handle email/password sign in
-  const handleSignIn = async () => {
-    if (!email || !password) {
-      alert('Please fill in all fields');
-      return;
-    }
+  // Google Auth Setup using expo-auth-session
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: googleAndroidId,
+    webClientId: googleWebId,
+  });
 
-    setLoading(true);
-    try {
-      // TODO: Implement your authentication logic here
-      console.log('Signing in with:', email, password);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // On success, navigate to main app
-      router.replace('/(tabs)');
-    } catch (error) {
-      console.error('Sign in error:', error);
-      alert('Sign in failed. Please try again.');
-    } finally {
-      setLoading(false);
+  // Handle Google OAuth Response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      handleGoogleSignInComplete(authentication);
     }
-  };
+  }, [response]);
 
-  // Handle Google Sign In
-  const handleGoogleSignIn = async () => {
+  // Complete Google Sign In
+  const handleGoogleSignInComplete = async (authentication: any) => {
     setGoogleLoading(true);
     try {
-      // TODO: Implement Google Sign-In
-      /*
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      const { accessToken } = authentication;
+      
+      // Fetch user info from Google
+      const userInfoResponse = await fetch(
+        'https://www.googleapis.com/userinfo/v2/me',
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      
+      const userInfo = await userInfoResponse.json();
       console.log('Google User Info:', userInfo);
       
-      // Send to your backend for authentication
-      // Then navigate to main app
-      router.replace('/(tabs)');
-      */
+      // Create userInfo object in the format your backend expects
+      const formattedUserInfo = {
+        user: {
+          email: userInfo.email,
+          name: userInfo.name,
+          photo: userInfo.picture,
+        }
+      };
       
-      // Temporary simulation
-      console.log('Google Sign In clicked');
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      alert('Google Sign-In will be implemented here');
+      // Send to your backend
+      const data = await signInWithOAuth('google', accessToken, formattedUserInfo);
+      
+      if (data.error) {
+        Alert.alert('Authentication Failed', data.error);
+        return;
+      }
+
+      // Success - backend handles both new and existing users
+      console.log('Backend response:', data);
+      
+      // TODO: Save the session token
+      // await AsyncStorage.setItem('userToken', data.token);
+      // await AsyncStorage.setItem('userId', data.user.id);
+      
+      Alert.alert(
+        'Welcome! 🎉',
+        data.isNewUser 
+          ? 'Your account has been created successfully' 
+          : 'Welcome back!',
+        [
+          {
+            text: 'Continue',
+            onPress: () => router.replace('/(tabs)'),
+          },
+        ]
+      );
     } catch (error) {
       console.error('Google sign in error:', error);
-      alert('Google Sign-In failed. Please try again.');
+      Alert.alert('Sign-In Failed', 'Something went wrong. Please try again.');
     } finally {
       setGoogleLoading(false);
     }
   };
 
+  // Trigger Google Sign In
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      await promptAsync();
+    } catch (error) {
+      console.error('Google sign in error:', error);
+      Alert.alert('Sign-In Failed', 'Google Sign-In failed. Please try again.');
+      setGoogleLoading(false);
+    }
+  };
+
+  // Handle email/password sign in
+  const handleSignIn = async () => {
+    if (!email || !password) {
+      Alert.alert('Missing Information', 'Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await signIn(email, password);
+      
+      if (data.error) {
+        Alert.alert('Sign In Failed', data.error);
+        return;
+      }
+
+      // Success
+      console.log('Sign in successful:', data);
+      
+      // TODO: Save the session token
+      // await AsyncStorage.setItem('userToken', data.token);
+      // await AsyncStorage.setItem('userId', data.user.id);
+      
+      // Navigate to main app
+      router.replace('/(tabs)');
+    } catch (error) {
+      console.error('Sign in error:', error);
+      Alert.alert(
+        'Sign In Failed',
+        'Something went wrong. Please check your internet connection and try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleForgotPassword = () => {
     // TODO: Navigate to forgot password screen
-    alert('Forgot password flow coming soon');
+    Alert.alert('Forgot Password', 'Forgot password flow coming soon');
   };
 
   const handleSignUp = () => {
@@ -125,7 +202,7 @@ export default function SignInScreen() {
               style={styles.googleButton}
               activeOpacity={0.8}
               onPress={handleGoogleSignIn}
-              disabled={googleLoading || loading}
+              disabled={googleLoading || loading || !request}
             >
               {googleLoading ? (
                 <ActivityIndicator color="#1e293b" />

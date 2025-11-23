@@ -1,8 +1,11 @@
 import { borderRadius, spacing } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import Constants from "expo-constants";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,10 +19,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { signUp } from '../../api';
-// TODO: Install and configure Google Sign-In
-// expo install @react-native-google-signin/google-signin
-// import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { signInWithOAuth, signUp } from '../../api';
+const extra = Constants.expoConfig?.extra || {};
+const { googleAndroidId, googleWebId } = extra;
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -33,6 +37,94 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  // Google Auth Setup using expo-auth-session
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: googleAndroidId,
+    webClientId: googleWebId,
+  });
+
+
+  // Handle Google OAuth Response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      handleGoogleSignUpComplete(authentication);
+    }
+  }, [response]);
+
+  // Complete Google Sign Up
+  const handleGoogleSignUpComplete = async (authentication: any) => {
+    setGoogleLoading(true);
+    try {
+      const { accessToken } = authentication;
+      
+      // Fetch user info from Google
+      const userInfoResponse = await fetch(
+        'https://www.googleapis.com/userinfo/v2/me',
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      
+      const userInfo = await userInfoResponse.json();
+      console.log('Google User Info:', userInfo);
+      
+      // Create userInfo object in the format your backend expects
+      const formattedUserInfo = {
+        user: {
+          email: userInfo.email,
+          name: userInfo.name,
+          photo: userInfo.picture,
+        }
+      };
+      
+      // Send to your backend
+      const data = await signInWithOAuth('google', accessToken, formattedUserInfo);
+      
+      if (data.error) {
+        Alert.alert('Authentication Failed', data.error);
+        return;
+      }
+
+      // Success - backend handles both new and existing users
+      console.log('Backend response:', data);
+      
+      // TODO: Save the session token
+      // await AsyncStorage.setItem('userToken', data.token);
+      // await AsyncStorage.setItem('userId', data.user.id);
+      
+      Alert.alert(
+        'Welcome! 🎉',
+        data.isNewUser 
+          ? 'Your account has been created successfully' 
+          : 'Welcome back!',
+        [
+          {
+            text: 'Get Started',
+            onPress: () => router.replace('/(tabs)'),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Google sign up error:', error);
+      Alert.alert('Sign-Up Failed', 'Something went wrong. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  // Trigger Google Sign Up
+  const handleGoogleSignUp = async () => {
+    setGoogleLoading(true);
+    try {
+      await promptAsync();
+    } catch (error) {
+      console.error('Google sign up error:', error);
+      Alert.alert('Sign-Up Failed', 'Google Sign-Up failed. Please try again.');
+      setGoogleLoading(false);
+    }
+  };
+
   // Email validation
   const isValidEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -41,7 +133,6 @@ export default function SignUpScreen() {
 
   // Password strength validation
   const isStrongPassword = (password: string) => {
-    // At least 8 characters, 1 uppercase, 1 lowercase, 1 number
     return password.length >= 8 && 
            /[A-Z]/.test(password) && 
            /[a-z]/.test(password) && 
@@ -86,7 +177,6 @@ export default function SignUpScreen() {
 
     setLoading(true);
     try {
-      // Call the API
       const data = await signUp(email, password);
       
       if (data.error) {
@@ -94,7 +184,6 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Success
       Alert.alert(
         'Account Created! 🎉',
         'Welcome to WattsAI! You can now sign in.',
@@ -116,38 +205,10 @@ export default function SignUpScreen() {
     }
   };
 
-  // Handle Google Sign Up
-  const handleGoogleSignUp = async () => {
-    setGoogleLoading(true);
-    try {
-      // TODO: Implement Google Sign-Up
-      /*
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      console.log('Google User Info:', userInfo);
-      
-      // Send to your backend for authentication
-      // Then navigate to main app
-      router.replace('/(tabs)');
-      */
-      
-      // Temporary simulation
-      console.log('Google Sign Up clicked');
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      Alert.alert('Coming Soon', 'Google Sign-Up will be implemented here');
-    } catch (error) {
-      console.error('Google sign up error:', error);
-      Alert.alert('Sign-Up Failed', 'Google Sign-Up failed. Please try again.');
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
   const handleSignIn = () => {
     router.push('/(auth)/signin');
   };
 
-  // Get password strength indicator
   const getPasswordStrength = () => {
     if (!password) return { text: '', color: '' };
     
@@ -198,7 +259,7 @@ export default function SignUpScreen() {
               style={styles.googleButton}
               activeOpacity={0.8}
               onPress={handleGoogleSignUp}
-              disabled={googleLoading || loading}
+              disabled={googleLoading || loading || !request}
             >
               {googleLoading ? (
                 <ActivityIndicator color="#1e293b" />

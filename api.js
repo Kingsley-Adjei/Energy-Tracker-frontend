@@ -1,4 +1,5 @@
-export const API_URL = "http://192.168.2.224:3000/api/v1/auth"; // backend IP + route prefix
+import Constants from "expo-constants";
+export const API_URL = Constants.expoConfig.extra;
 
 export const signUp = async (email, password) => {
   const res = await fetch(`${API_URL}/signup`, {
@@ -24,4 +25,19 @@ export const signIn = async (email, password) => {
 
   const data = await res.json();
   return data;
+};
+
+export const signInWithOAuth = async (provider, idToken, userInfo) => {
+  const res = await fetch(`${API_URL}/oauth/signin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider,
+      idToken,
+      email: userInfo?.user?.email,
+      name: userInfo?.user?.name,
+      profileImage: userInfo?.user?.photo,
+    }),
+  });
+  return await res.json();
 };
