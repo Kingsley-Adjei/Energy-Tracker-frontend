@@ -6,5 +6,6 @@ export default ({ config }) => ({
     googleWebId: process.env.googleWebId,
     API_URL: process.env.API_URL,
     googleAndroidId: process.env.googleAndroidId,
+    useProxy: true,
   },
 });

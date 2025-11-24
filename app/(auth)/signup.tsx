@@ -1,5 +1,6 @@
 import { borderRadius, spacing } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
+import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import Constants from "expo-constants";
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,8 +40,10 @@ export default function SignUpScreen() {
 
   // Google Auth Setup using expo-auth-session
   const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: googleAndroidId,
-    webClientId: googleWebId,
+    androidClientId: googleAndroidId,   // your Android OAuth client ID
+    webClientId: googleWebId,           // your Web OAuth client ID
+    useProxy: true,                     // Expo Go / dev
+  redirectUri: makeRedirectUri({ useProxy: true }),
   });
 
 
